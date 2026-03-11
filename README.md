@@ -46,7 +46,7 @@ AppPromptBuilder<TData, TSection>        <- SDK (this library)
 - **Footer support** — Closing instructions block after all sections
 - **Token estimation** — Fast ~4 chars/token heuristic for UI display
 - **Zero dependencies** — Pure Kotlin, no Android/Compose/framework deps
-- **144 unit tests** — Full coverage of all components across 18 test classes
+- **166 unit tests** — Full coverage of all components across 20 test classes
 - **GitHub Actions CI** — Auto-runs build, tests, and sample on push/PR
 
 ## Install via JitPack
@@ -71,7 +71,7 @@ In your `app/build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("com.github.yetibownur:contextexport:1.3.0")
+    implementation("com.github.yetibownur:contextexport:1.3.2")
 }
 ```
 
@@ -548,7 +548,7 @@ includeBuild("../contextexport")
 In your `app/build.gradle.kts`:
 
 ```kotlin
-implementation("com.garrettmcbride.contextexport:contextexport:1.3.0")
+implementation("com.garrettmcbride.contextexport:contextexport:1.3.2")
 ```
 
 When you publish to JitPack later, just remove the `includeBuild` line and switch to the JitPack coordinates. No code changes needed.
@@ -734,7 +734,7 @@ When you publish to JitPack later, just remove the `includeBuild` line and switc
 ./gradlew test
 ```
 
-144 tests covering: builder (19), chunker (8), token estimator (7), PromptResult (4), MarkdownTable (7), NumberFormat (11), PromptCompressor (9), AutoSkipEmpty (5), SectionStats (7), ContextWindow (11), BudgetResult (7), DiffExport (9), ExportPreset (7), CacheOptimization (6), SectionGroup (7), StructuredMessage (8), Interceptor (7), Tokenizer (6).
+166 tests covering: builder (19), chunker (8), token estimator (7), PromptResult (4), MarkdownTable (7), NumberFormat (11), PromptCompressor (9), AutoSkipEmpty (5), SectionStats (7), ContextWindow (11), BudgetResult (7), DiffExport (8), ExportPreset (7), CacheOptimization (6), SectionGroup (7), StructuredMessage (8), Interceptor (7), Tokenizer (6), CrossFeature (9), EdgeCase (13).
 
 ## Generating docs
 

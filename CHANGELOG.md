@@ -2,6 +2,23 @@
 
 All notable changes to ContextExport SDK are documented here.
 
+## [1.3.2] — 2026-03-11
+
+### Fixed
+- **MarkdownTable pipe escaping** — `|` in cell content and headers is now escaped as `\|` to prevent broken table output
+- **NumberFormat NaN/Infinity** — `compact()` returns `"NaN"` or `"∞"`/`"-∞"` instead of garbage like `"NaNK"`
+- **NumberFormat Long.MIN_VALUE** — `withCommas()` no longer overflows from `abs(Long.MIN_VALUE)`
+- **Structured prompt section merge** — `buildStructuredPrompt()` inserts newline between adjacent same-role sections that lack trailing newlines
+
+## [1.3.1] — 2026-03-11
+
+### Fixed
+- **jsonEscape Unicode handling** — Rewrote from `.replace()` chain to char-by-char loop with full control character escaping (U+0000–U+001F, U+2028, U+2029)
+- **PromptCompressor.savings() dead code** — Removed incorrect variable that called `TokenEstimator.estimate()` on a string representation of a number
+
+### Added
+- **Cross-feature integration tests** — 9 tests verifying feature combinations (cacheOptimized+autoSkipEmpty, interceptors+diff, presets+autoSkipEmpty, JSON control chars, etc.)
+
 ## [1.3.0] — 2026-03-11
 
 ### Added
