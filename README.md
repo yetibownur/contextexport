@@ -31,10 +31,15 @@ AppPromptBuilder<TData, TSection>        <- SDK (this library)
 - **Section item counts** — `countSectionItems()` for UI chip labels like "Recipes (3)"
 - **Format versioning** — `formatVersion` property embeds schema version in output
 - **Configurable chunk labels** — `appName` property brands multi-part continuation messages
+- **Auto-skip empty sections** — `autoSkipEmpty` property skips sections with 0 items, eliminating manual guards
+- **Per-section token breakdown** — `SectionStats` with chars, tokens, and percentage for each section
+- **Context window presets** — `ContextWindow` with model constants and utilities (`fitsInContext`, `usagePercent`)
+- **Smart truncation** — `buildPromptWithBudget()` drops low-priority sections to fit token limits
+- **Section priority** — `sectionPriority()` override controls truncation order
 - **Footer support** — Closing instructions block after all sections
 - **Token estimation** — Fast ~4 chars/token heuristic for UI display
 - **Zero dependencies** — Pure Kotlin, no Android/Compose/framework deps
-- **65 unit tests** — Full coverage of all components
+- **95 unit tests** — Full coverage of all components
 - **GitHub Actions CI** — Auto-runs build, tests, and sample on push/PR
 
 ## Install via JitPack
@@ -59,7 +64,7 @@ In your `app/build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("com.github.yetibownur:contextexport:1.1.0")
+    implementation("com.github.yetibownur:contextexport:1.2.0")
 }
 ```
 
@@ -206,6 +211,77 @@ NumberFormat.compact(750)              // "750"
 NumberFormat.compact(1500, "lbs")      // "1.5K lbs"
 NumberFormat.compact(2_300_000)        // "2.3M"
 NumberFormat.withCommas(1_234_567)     // "1,234,567"
+```
+
+### Auto-skip empty sections
+
+Set `autoSkipEmpty = true` to automatically skip sections where `sectionItemCount()` returns 0. No more manual `if (data.items.isEmpty()) return` guards in every renderer:
+
+```kotlin
+class MyPromptBuilder : AppPromptBuilder<MyData, MySection>() {
+    override val autoSkipEmpty = true  // SDK skips empty sections automatically
+
+    override fun sectionItemCount(section: MySection, data: MyData): Int = when (section) {
+        MySection.PROFILE -> 1
+        MySection.HISTORY -> data.entries.size  // 0 entries → section skipped
+        MySection.STATS -> data.totalScore
+    }
+
+    // No need for "if (data.entries.isEmpty()) return" in appendHistory!
+}
+```
+
+### Per-section token breakdown
+
+`PromptResult.sectionBreakdown` gives you per-section stats:
+
+```kotlin
+val result = builder.buildPromptResult(data, MySection.entries.toSet())
+
+for ((name, stats) in result.sectionBreakdown) {
+    println("$name: ${stats.chars} chars, ${stats.tokens} tokens, ${stats.percentage}%")
+}
+// HISTORY: 1,200 chars, 300 tokens, 45.2%
+// PROFILE: 400 chars, 100 tokens, 15.1%
+```
+
+### Context window presets
+
+Check if your prompt fits a model's context window:
+
+```kotlin
+import com.garrettmcbride.contextexport.ContextWindow
+
+val fits = ContextWindow.fitsInContext(result.estimatedTokens, ContextWindow.CLAUDE_3_5)
+val usage = ContextWindow.usagePercent(result.estimatedTokens, ContextWindow.CLAUDE_3_5)
+// "Uses 12.3% of Claude 3.5's context"
+
+val budget = ContextWindow.effectiveInput(ContextWindow.GPT_4O)  // 108,800 tokens
+val remaining = ContextWindow.remainingTokens(result.estimatedTokens, ContextWindow.GPT_4O)
+```
+
+### Smart truncation with token budgets
+
+Auto-fit prompts to a model's context by dropping low-priority sections:
+
+```kotlin
+val budget = ContextWindow.effectiveInput(ContextWindow.CLAUDE_3_5)
+val result = builder.buildPromptWithBudget(data, allSections, maxTokens = budget)
+
+result.withinBudget       // true — it fits
+result.droppedSections    // {LOOT_TABLES, SESSIONS} — what was cut
+result.includedSections   // remaining sections
+result.promptResult       // the trimmed PromptResult
+```
+
+Override `sectionPriority()` to control which sections are dropped first:
+
+```kotlin
+override fun sectionPriority(section: MySection): Int = when (section) {
+    MySection.PROFILE -> 100    // highest priority, kept last
+    MySection.HISTORY -> 50
+    MySection.STATS -> 10       // lowest priority, dropped first
+}
 ```
 
 ### Section item counts
@@ -364,12 +440,15 @@ When you publish to JitPack later, just remove the `includeBuild` line and switc
 | `buildPromptResult(data, enabledSections, chunkSize?)` | Returns a `PromptResult` with text, chunks, and metadata. |
 | `buildJsonPrompt(data, enabledSections, totalSectionCount?)` | Returns structured JSON with individual sections and metadata. |
 | `countSectionItems(data)` | Returns `Map<TSection, Int>` of item counts for all sections. |
+| `buildPromptWithBudget(data, enabledSections, maxTokens, chunkSize?)` | Returns `BudgetResult` — drops low-priority sections to fit token budget. |
 | `appendHeader(sb, data)` | Override — write the prompt header (title, AI instructions). |
 | `sectionRenderers()` | Override — return `Section to renderer` pairs. |
 | `appendFooter(sb, data)` | Override — write closing instructions after all sections. |
 | `sectionItemCount(section, data)` | Override — return item count for a section (default 0). |
+| `sectionPriority(section)` | Override — priority for budget truncation (higher = kept longer). |
 | `appName` | Override — brand name for chunk continuation labels. |
 | `formatVersion` | Override — schema version embedded in output (0 = disabled). |
+| `autoSkipEmpty` | Override — skip sections where `sectionItemCount()` returns 0 (default false). |
 
 ### `PromptResult`
 
@@ -383,6 +462,7 @@ When you publish to JitPack later, just remove the `includeBuild` line and switc
 | `sizeKb` | `Double` | Size in kilobytes. |
 | `estimatedTokens` | `Int` | Approximate token count. |
 | `enabledSectionCount` | `Int` | Sections that were included. |
+| `sectionBreakdown` | `Map<String, SectionStats>` | Per-section chars, tokens, and percentage. |
 
 ### `MarkdownTable`
 
@@ -418,6 +498,36 @@ When you publish to JitPack later, just remove the `includeBuild` line and switc
 |--------|-------------|
 | `estimate(text, charsPerToken?)` | Estimates token count. Default 4.0 chars/token. |
 
+### `SectionStats`
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `chars` | `Int` | Character count for this section. |
+| `tokens` | `Int` | Estimated token count. |
+| `percentage` | `Double` | Share of total prompt (0.0–100.0). |
+
+### `BudgetResult<TSection>`
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `promptResult` | `PromptResult` | The trimmed prompt result. |
+| `droppedSections` | `Set<TSection>` | Sections removed to fit budget. |
+| `includedSections` | `Set<TSection>` | Sections kept in the prompt. |
+| `budgetTokens` | `Int` | The target token budget. |
+| `withinBudget` | `Boolean` | Whether the final prompt fits. |
+
+### `ContextWindow`
+
+| Member | Description |
+|--------|-------------|
+| `GPT_4_TURBO`, `GPT_4O`, `GPT_4O_MINI` | 128K context presets. |
+| `CLAUDE_3`, `CLAUDE_3_5`, `CLAUDE_4` | 200K context presets. |
+| `GEMINI_1_5_PRO`, `GEMINI_1_5_FLASH`, `GEMINI_2_FLASH` | 1M context presets. |
+| `effectiveInput(contextSize, reserveRatio?)` | Usable input tokens after reserving 15% for output. |
+| `fitsInContext(tokens, contextSize, reserveRatio?)` | Whether tokens fit within the effective budget. |
+| `usagePercent(tokens, contextSize, reserveRatio?)` | Usage as 0.0–100.0+ percentage. |
+| `remainingTokens(tokens, contextSize, reserveRatio?)` | Remaining budget (negative if over). |
+
 ### Type Parameters
 
 | Parameter | Constraint | Description |
@@ -436,7 +546,7 @@ When you publish to JitPack later, just remove the `includeBuild` line and switc
 ./gradlew test
 ```
 
-65 tests covering: builder (19), chunker (8), token estimator (7), PromptResult (4), MarkdownTable (7), NumberFormat (11), PromptCompressor (9).
+95 tests covering: builder (19), chunker (8), token estimator (7), PromptResult (4), MarkdownTable (7), NumberFormat (11), PromptCompressor (9), AutoSkipEmpty (5), SectionStats (7), ContextWindow (12), BudgetResult (7).
 
 ## Generating docs
 

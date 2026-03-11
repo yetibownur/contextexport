@@ -14,6 +14,9 @@ package com.garrettmcbride.contextexport
  * @property estimatedTokens Rough token estimate (~4 characters per token).
  * @property enabledSectionCount How many sections were enabled when this prompt was built.
  * @property chunkSize The character limit used for chunking.
+ * @property sectionBreakdown Per-section size breakdown keyed by `TSection.name`.
+ *   Each entry contains character count, estimated tokens, and percentage of total prompt.
+ *   Empty map when built via [AppPromptBuilder.buildPrompt] directly.
  */
 data class PromptResult(
     val fullText: String,
@@ -21,7 +24,8 @@ data class PromptResult(
     val sizeBytes: Int,
     val estimatedTokens: Int,
     val enabledSectionCount: Int,
-    val chunkSize: Int
+    val chunkSize: Int,
+    val sectionBreakdown: Map<String, SectionStats> = emptyMap()
 ) {
     /** Number of chunks the prompt was split into. */
     val chunkCount: Int get() = chunks.size

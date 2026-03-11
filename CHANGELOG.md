@@ -2,6 +2,15 @@
 
 All notable changes to ContextExport SDK are documented here.
 
+## [1.2.0] — 2026-03-11
+
+### Added
+- **Conditional section rendering** — `autoSkipEmpty` property auto-skips sections where `sectionItemCount()` returns 0, eliminating manual `if (isEmpty) return` guards
+- **Per-section token breakdown** — `PromptResult.sectionBreakdown` provides `SectionStats` (chars, tokens, percentage) for each enabled section
+- **Context window presets** — `ContextWindow` object with model constants (GPT-4o, Claude 3/3.5/4, Gemini) and utilities (`effectiveInput`, `fitsInContext`, `usagePercent`, `remainingTokens`)
+- **Smart truncation** — `buildPromptWithBudget()` drops lowest-priority sections to fit a token budget, returns `BudgetResult` with drop info
+- **Section priority** — `sectionPriority()` override controls which sections are dropped first during budget truncation
+
 ## [1.1.0] — 2026-03-11
 
 ### Added

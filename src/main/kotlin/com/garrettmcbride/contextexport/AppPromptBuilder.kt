@@ -68,6 +68,18 @@ open class AppPromptBuilder<TData, TSection : Enum<TSection>> {
     protected open val formatVersion: Int = 0
 
     /**
+     * Override to automatically skip sections whose [sectionItemCount] returns 0.
+     *
+     * When `true`, the build loop checks `sectionItemCount(section, data) == 0`
+     * before calling a section's renderer, eliminating the need for manual
+     * `if (data.xxx.isEmpty()) return` guards in every renderer.
+     *
+     * Requires that [sectionItemCount] is properly overridden with accurate counts
+     * for all sections. Default is `false` (all enabled sections are always rendered).
+     */
+    protected open val autoSkipEmpty: Boolean = false
+
+    /**
      * Builds the prompt and returns the raw text string.
      *
      * For richer output (chunks, token estimate, metadata), use [buildPromptResult] instead.
@@ -89,7 +101,9 @@ open class AppPromptBuilder<TData, TSection : Enum<TSection>> {
         appendHeader(sb, data)
 
         for ((section, renderer) in sectionRenderers()) {
-            if (section in enabledSections) renderer(sb, data)
+            if (section !in enabledSections) continue
+            if (autoSkipEmpty && sectionItemCount(section, data) == 0) continue
+            renderer(sb, data)
         }
 
         appendFooter(sb, data)
@@ -117,6 +131,25 @@ open class AppPromptBuilder<TData, TSection : Enum<TSection>> {
         val fullText = buildPrompt(data, enabledSections)
         val chunks = PromptChunker.chunk(fullText, chunkSize, appName)
         val sizeBytes = fullText.toByteArray(Charsets.UTF_8).size
+        val totalChars = fullText.length.coerceAtLeast(1)
+
+        // Per-section breakdown
+        val breakdown = mutableMapOf<String, SectionStats>()
+        for ((section, renderer) in sectionRenderers()) {
+            if (section !in enabledSections) continue
+            if (autoSkipEmpty && sectionItemCount(section, data) == 0) continue
+            val sectionSb = StringBuilder()
+            renderer(sectionSb, data)
+            val content = sectionSb.toString()
+            if (content.isNotEmpty()) {
+                val chars = content.length
+                breakdown[section.name] = SectionStats(
+                    chars = chars,
+                    tokens = TokenEstimator.estimate(content),
+                    percentage = (chars.toDouble() / totalChars) * 100.0
+                )
+            }
+        }
 
         return PromptResult(
             fullText = fullText,
@@ -124,7 +157,8 @@ open class AppPromptBuilder<TData, TSection : Enum<TSection>> {
             sizeBytes = sizeBytes,
             estimatedTokens = TokenEstimator.estimate(fullText),
             enabledSectionCount = enabledSections.size,
-            chunkSize = chunkSize
+            chunkSize = chunkSize,
+            sectionBreakdown = breakdown
         )
     }
 
@@ -193,6 +227,96 @@ open class AppPromptBuilder<TData, TSection : Enum<TSection>> {
     protected open fun appendFooter(sb: StringBuilder, data: TData) {}
 
     /**
+     * Override to assign priority to sections for budget-based truncation.
+     *
+     * Higher values = higher priority (kept first when trimming via
+     * [buildPromptWithBudget]). Default returns the section's position
+     * in [sectionRenderers] inverted, so sections listed first have the
+     * highest priority.
+     *
+     * @param section The section to prioritize.
+     * @return Priority value. Higher = more important.
+     */
+    protected open fun sectionPriority(section: TSection): Int {
+        val renderers = sectionRenderers()
+        val index = renderers.indexOfFirst { it.first == section }
+        return if (index >= 0) renderers.size - index else 0
+    }
+
+    /**
+     * Builds a prompt that fits within a token budget by selectively
+     * dropping low-priority sections.
+     *
+     * Sections are rendered individually, then sorted by [sectionPriority].
+     * Starting from the lowest-priority section, sections are dropped until
+     * the estimated token count fits within [maxTokens].
+     *
+     * If the prompt still exceeds the budget after dropping all sections
+     * (header + footer alone are too large), [BudgetResult.withinBudget]
+     * will be `false`.
+     *
+     * @param data Your app's data bag.
+     * @param enabledSections Which sections to consider.
+     * @param maxTokens Maximum token budget for the final prompt.
+     * @param chunkSize Chunk size passed through to [buildPromptResult].
+     * @return A [BudgetResult] with the trimmed prompt and drop information.
+     */
+    fun buildPromptWithBudget(
+        data: TData,
+        enabledSections: Set<TSection>,
+        maxTokens: Int,
+        chunkSize: Int = PromptChunker.DEFAULT_CHUNK_SIZE
+    ): BudgetResult<TSection> {
+        // First try with all enabled sections
+        val fullResult = buildPromptResult(data, enabledSections, chunkSize)
+        if (fullResult.estimatedTokens <= maxTokens) {
+            return BudgetResult(
+                promptResult = fullResult,
+                droppedSections = emptySet(),
+                includedSections = enabledSections,
+                budgetTokens = maxTokens,
+                withinBudget = true
+            )
+        }
+
+        // Measure each section individually
+        data class SectionMeasure(val section: TSection, val tokens: Int, val priority: Int)
+
+        val measures = mutableListOf<SectionMeasure>()
+        for ((section, renderer) in sectionRenderers()) {
+            if (section !in enabledSections) continue
+            if (autoSkipEmpty && sectionItemCount(section, data) == 0) continue
+            val sb = StringBuilder()
+            renderer(sb, data)
+            measures.add(SectionMeasure(section, TokenEstimator.estimate(sb.toString()), sectionPriority(section)))
+        }
+
+        // Sort by priority ascending (lowest priority = drop first)
+        val sortedByPriority = measures.sortedBy { it.priority }
+
+        val dropped = mutableSetOf<TSection>()
+        var currentTokens = fullResult.estimatedTokens
+
+        for (measure in sortedByPriority) {
+            if (currentTokens <= maxTokens) break
+            dropped.add(measure.section)
+            currentTokens -= measure.tokens
+        }
+
+        // Rebuild with remaining sections
+        val remaining = enabledSections - dropped
+        val trimmedResult = buildPromptResult(data, remaining, chunkSize)
+
+        return BudgetResult(
+            promptResult = trimmedResult,
+            droppedSections = dropped,
+            includedSections = remaining,
+            budgetTokens = maxTokens,
+            withinBudget = trimmedResult.estimatedTokens <= maxTokens
+        )
+    }
+
+    /**
      * Builds a structured JSON string with header, individual sections, footer, and metadata.
      *
      * Each enabled section is rendered independently so API consumers can send
@@ -223,13 +347,13 @@ open class AppPromptBuilder<TData, TSection : Enum<TSection>> {
         // Render each enabled section independently
         val sections = mutableMapOf<String, String>()
         for ((section, renderer) in sectionRenderers()) {
-            if (section in enabledSections) {
-                val sectionSb = StringBuilder()
-                renderer(sectionSb, data)
-                val content = sectionSb.toString().trimEnd()
-                if (content.isNotEmpty()) {
-                    sections[section.name] = content
-                }
+            if (section !in enabledSections) continue
+            if (autoSkipEmpty && sectionItemCount(section, data) == 0) continue
+            val sectionSb = StringBuilder()
+            renderer(sectionSb, data)
+            val content = sectionSb.toString().trimEnd()
+            if (content.isNotEmpty()) {
+                sections[section.name] = content
             }
         }
 
