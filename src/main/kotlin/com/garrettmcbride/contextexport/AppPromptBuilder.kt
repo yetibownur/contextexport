@@ -730,12 +730,25 @@ open class AppPromptBuilder<TData, TSection : Enum<TSection>> {
 
     private fun jsonEscape(value: String): String {
         if (value.isEmpty()) return "\"\""
-        val escaped = value
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
-        return "\"$escaped\""
+        val sb = StringBuilder(value.length + 16)
+        for (ch in value) {
+            when (ch) {
+                '\\' -> sb.append("\\\\")
+                '"' -> sb.append("\\\"")
+                '\n' -> sb.append("\\n")
+                '\r' -> sb.append("\\r")
+                '\t' -> sb.append("\\t")
+                '\b' -> sb.append("\\b")
+                '\u000C' -> sb.append("\\f")
+                else -> {
+                    if (ch.code in 0x0000..0x001F || ch == '\u2028' || ch == '\u2029') {
+                        sb.append("\\u%04x".format(ch.code))
+                    } else {
+                        sb.append(ch)
+                    }
+                }
+            }
+        }
+        return "\"$sb\""
     }
 }

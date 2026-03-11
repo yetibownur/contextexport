@@ -70,7 +70,7 @@ object PromptCompressor {
     fun savings(prompt: String): Pair<Int, Int> {
         val compressed = compress(prompt)
         val charsSaved = prompt.length - compressed.length
-        val tokensSaved = TokenEstimator.estimate(charsSaved.toString()) // rough
-        return charsSaved to (charsSaved / TokenEstimator.DEFAULT_CHARS_PER_TOKEN).toInt()
+        val tokensSaved = (charsSaved / TokenEstimator.DEFAULT_CHARS_PER_TOKEN).toInt()
+        return charsSaved to tokensSaved
     }
 }
