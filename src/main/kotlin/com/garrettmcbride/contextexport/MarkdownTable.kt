@@ -64,7 +64,7 @@ class MarkdownTable(private vararg val headers: String) {
         val colCount = headers.size
 
         // Header row
-        sb.appendLine(headers.joinToString(" | ", "| ", " |"))
+        sb.appendLine(headers.map { escapePipe(it) }.joinToString(" | ", "| ", " |"))
 
         // Separator row
         sb.appendLine(headers.map { "---" }.joinToString(" | ", "| ", " |"))
@@ -72,13 +72,15 @@ class MarkdownTable(private vararg val headers: String) {
         // Data rows
         for (row in dataRows) {
             val cells = Array(colCount) { i ->
-                if (i < row.size) row[i] else ""
+                if (i < row.size) escapePipe(row[i]) else ""
             }
             sb.appendLine(cells.joinToString(" | ", "| ", " |"))
         }
 
         return sb.toString()
     }
+
+    private fun escapePipe(value: String): String = value.replace("|", "\\|")
 
     /** Whether any data rows have been added. */
     val isEmpty: Boolean get() = dataRows.isEmpty()

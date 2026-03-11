@@ -478,6 +478,10 @@ open class AppPromptBuilder<TData, TSection : Enum<TSection>> {
             val role = sectionRole(section)
             val lastBlock = blocks.lastOrNull()
             if (lastBlock != null && lastBlock.role == role) {
+                // Ensure newline separator between merged sections
+                if (lastBlock.content.isNotEmpty() && !lastBlock.content.endsWith("\n")) {
+                    lastBlock.content.append("\n")
+                }
                 lastBlock.content.append(content)
             } else {
                 blocks.add(RoleBlock(role, StringBuilder(content)))

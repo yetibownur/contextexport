@@ -33,6 +33,11 @@ object NumberFormat {
      */
     fun compact(value: Number, unit: String = "", decimals: Int = 1): String {
         val d = value.toDouble()
+        if (d.isNaN()) return if (unit.isNotEmpty()) "NaN $unit" else "NaN"
+        if (d.isInfinite()) {
+            val s = if (d < 0) "-∞" else "∞"
+            return if (unit.isNotEmpty()) "$s $unit" else s
+        }
         val abs = kotlin.math.abs(d)
         val sign = if (d < 0) "-" else ""
         val fmt = "%.${decimals}f"
@@ -72,7 +77,7 @@ object NumberFormat {
      */
     fun withCommas(value: Long, unit: String = ""): String {
         val sign = if (value < 0) "-" else ""
-        val abs = kotlin.math.abs(value)
+        val abs = if (value == Long.MIN_VALUE) Long.MAX_VALUE else kotlin.math.abs(value)
         val str = abs.toString()
         val result = buildString {
             for ((i, c) in str.withIndex()) {
