@@ -36,10 +36,17 @@ AppPromptBuilder<TData, TSection>        <- SDK (this library)
 - **Context window presets** — `ContextWindow` with model constants and utilities (`fitsInContext`, `usagePercent`)
 - **Smart truncation** — `buildPromptWithBudget()` drops low-priority sections to fit token limits
 - **Section priority** — `sectionPriority()` override controls truncation order
+- **Diff/delta exports** — `snapshot()` + `buildPromptDiff()` only re-export changed sections
+- **Export presets** — Named section configurations with optional target model auto-fitting
+- **Cache optimization** — `cacheOptimized` sorts STABLE sections first to maximize AI API prompt caching
+- **Section groups** — `sectionGroups()` for batch enable/disable of related sections
+- **Structured messages** — `buildStructuredPrompt()` returns `List<PromptMessage>` with SYSTEM/USER roles
+- **Render interceptors** — `SectionInterceptor` for post-processing section output (compression, redaction, etc.)
+- **Pluggable tokenizers** — `Tokenizer` interface to swap in real tokenizers (tiktoken, etc.)
 - **Footer support** — Closing instructions block after all sections
 - **Token estimation** — Fast ~4 chars/token heuristic for UI display
 - **Zero dependencies** — Pure Kotlin, no Android/Compose/framework deps
-- **95 unit tests** — Full coverage of all components
+- **144 unit tests** — Full coverage of all components across 18 test classes
 - **GitHub Actions CI** — Auto-runs build, tests, and sample on push/PR
 
 ## Install via JitPack
@@ -64,7 +71,7 @@ In your `app/build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("com.github.yetibownur:contextexport:1.2.0")
+    implementation("com.github.yetibownur:contextexport:1.3.0")
 }
 ```
 
@@ -284,6 +291,122 @@ override fun sectionPriority(section: MySection): Int = when (section) {
 }
 ```
 
+### Diff/delta exports
+
+Only re-export sections that changed since the last export. Huge token savings for iterative conversations:
+
+```kotlin
+var lastSnapshot: PromptSnapshot? = null
+
+fun export() {
+    val diff = builder.buildPromptDiff(data, allSections, lastSnapshot)
+    lastSnapshot = builder.snapshot(data, allSections)
+
+    diff.changedSections    // {STATS, NOTES} — what's new
+    diff.unchangedSections  // {PROFILE, LORE} — skipped
+    diff.isFullExport       // false (true when no previous snapshot)
+    diff.promptResult       // PromptResult with only changed sections
+}
+```
+
+### Export presets
+
+Named configurations for quick export profiles — wire to a dropdown instead of 11 checkboxes:
+
+```kotlin
+override fun exportPresets() = listOf(
+    ExportPreset("Full Export", MySection.entries.toSet()),
+    ExportPreset("Quick Summary", setOf(MySection.PROFILE, MySection.STATS)),
+    ExportPreset("For Claude", MySection.entries.toSet(), targetModel = ContextWindow.CLAUDE_3_5)
+)
+
+// Usage:
+val result = builder.buildFromPreset(data, "Quick Summary")
+val preset = builder.getPreset("For Claude")  // returns ExportPreset or null
+```
+
+When a preset has a `targetModel`, `buildFromPreset` automatically uses `buildPromptWithBudget` to fit.
+
+### Cache-optimized section ordering
+
+Maximize AI API prompt caching by rendering stable sections first and volatile sections last:
+
+```kotlin
+override val cacheOptimized = true
+
+override fun sectionVolatility(section: MySection): Volatility = when (section) {
+    MySection.LORE -> Volatility.STABLE        // rarely changes, rendered first
+    MySection.INVENTORY -> Volatility.MODERATE  // changes occasionally
+    MySection.SESSION_NOTES -> Volatility.VOLATILE  // changes every export, rendered last
+}
+```
+
+### Section groups
+
+Batch enable/disable related sections. Maps naturally to UI accordion panels:
+
+```kotlin
+override fun sectionGroups() = mapOf(
+    "World" to setOf(MySection.LORE, MySection.LOCATIONS, MySection.FACTIONS),
+    "Characters" to setOf(MySection.PCS, MySection.NPCS),
+    "Session" to setOf(MySection.NOTES, MySection.COMBAT)
+)
+
+// Usage:
+val sections = builder.sectionsFromGroups("World", "Characters")
+val result = builder.buildPromptResult(data, sections)
+val groups = builder.availableGroups()  // {"World", "Characters", "Session"}
+```
+
+### Structured message output
+
+Build prompts as system + user message arrays for AI APIs:
+
+```kotlin
+override fun sectionRole(section: MySection): MessageRole = when (section) {
+    MySection.LORE -> MessageRole.SYSTEM       // context the AI should internalize
+    MySection.QUERY -> MessageRole.USER        // the user's actual request
+    MySection.DATA -> MessageRole.USER
+}
+
+val messages = builder.buildStructuredPrompt(data, allSections)
+// [PromptMessage(SYSTEM, "header + lore"), PromptMessage(USER, "query + data + footer")]
+// Maps directly to: [{"role": "system", ...}, {"role": "user", ...}]
+```
+
+Header is always SYSTEM, footer is always USER. Adjacent same-role sections are merged.
+
+### Render interceptors
+
+Post-processing hooks applied to each section's output — cross-cutting concerns without modifying renderers:
+
+```kotlin
+override fun sectionInterceptors() = listOf(
+    // Auto-compress verbose sections
+    SectionInterceptor { name, content ->
+        if (name == "LORE") PromptCompressor.compress(content) else content
+    },
+    // Add timestamps
+    SectionInterceptor { _, content ->
+        content + "\n<!-- exported: ${System.currentTimeMillis()} -->\n"
+    }
+)
+```
+
+Interceptors chain in order and affect all output methods (buildPrompt, buildPromptResult, buildJsonPrompt, etc.).
+
+### Pluggable tokenizers
+
+Swap in a real tokenizer for exact counts instead of the ~4 chars/token heuristic:
+
+```kotlin
+override val tokenizer = Tokenizer { text ->
+    myTiktokenInstance.encode(text).size  // exact token count
+}
+```
+
+The custom tokenizer is used everywhere: `estimatedTokens`, `sectionBreakdown`, `buildPromptWithBudget`, and JSON metadata.
+
 ### Section item counts
 
 Override `sectionItemCount()` once in your builder, then call `countSectionItems()` from your ViewModel to drive UI chip labels:
@@ -425,7 +548,7 @@ includeBuild("../contextexport")
 In your `app/build.gradle.kts`:
 
 ```kotlin
-implementation("com.garrettmcbride.contextexport:contextexport:1.1.0")
+implementation("com.garrettmcbride.contextexport:contextexport:1.3.0")
 ```
 
 When you publish to JitPack later, just remove the `includeBuild` line and switch to the JitPack coordinates. No code changes needed.
@@ -449,6 +572,20 @@ When you publish to JitPack later, just remove the `includeBuild` line and switc
 | `appName` | Override — brand name for chunk continuation labels. |
 | `formatVersion` | Override — schema version embedded in output (0 = disabled). |
 | `autoSkipEmpty` | Override — skip sections where `sectionItemCount()` returns 0 (default false). |
+| `cacheOptimized` | Override — sort sections by volatility for prompt caching (default false). |
+| `tokenizer` | Override — plug in a custom `Tokenizer` (default: ~4 chars/token heuristic). |
+| `sectionVolatility(section)` | Override — STABLE/MODERATE/VOLATILE for cache-optimized ordering. |
+| `exportPresets()` | Override — named `ExportPreset` configurations for quick profiles. |
+| `sectionGroups()` | Override — group sections for batch enable/disable. |
+| `sectionRole(section)` | Override — SYSTEM/USER role for structured message output. |
+| `sectionInterceptors()` | Override — post-processing hooks for section content. |
+| `snapshot(data, enabledSections)` | Creates a `PromptSnapshot` of section content hashes. |
+| `buildPromptDiff(data, enabledSections, previous?, chunkSize?)` | Returns `DiffResult` with only changed sections. |
+| `getPreset(name)` | Returns an `ExportPreset` by name, or null. |
+| `buildFromPreset(data, presetName, chunkSize?)` | Builds from a named preset (auto-fits if target model set). |
+| `sectionsFromGroups(vararg groupNames)` | Returns union of sections in the named groups. |
+| `availableGroups()` | Returns all group names from `sectionGroups()`. |
+| `buildStructuredPrompt(data, enabledSections)` | Returns `List<PromptMessage>` with SYSTEM/USER roles. |
 
 ### `PromptResult`
 
@@ -528,6 +665,57 @@ When you publish to JitPack later, just remove the `includeBuild` line and switc
 | `usagePercent(tokens, contextSize, reserveRatio?)` | Usage as 0.0–100.0+ percentage. |
 | `remainingTokens(tokens, contextSize, reserveRatio?)` | Remaining budget (negative if over). |
 
+### `DiffResult<TSection>`
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `promptResult` | `PromptResult` | Prompt with only changed sections. |
+| `changedSections` | `Set<TSection>` | Sections that differ from the snapshot. |
+| `unchangedSections` | `Set<TSection>` | Sections identical to the snapshot. |
+| `isFullExport` | `Boolean` | `true` if no previous snapshot (all sections included). |
+
+### `ExportPreset<TSection>`
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `String` | Display name for the preset. |
+| `sections` | `Set<TSection>` | Sections to enable. |
+| `targetModel` | `Int?` | Optional `ContextWindow` constant for auto-fitting. |
+
+### `PromptSnapshot`
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `sectionHashes` | `Map<String, String>` | SHA-256 hashes of each section's content. |
+
+### `PromptMessage`
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `role` | `MessageRole` | `SYSTEM` or `USER`. |
+| `content` | `String` | Rendered text for this message. |
+
+### `Volatility`
+
+| Value | Description |
+|-------|-------------|
+| `STABLE` | Rarely changes (lore, settings). Rendered first when cache-optimized. |
+| `MODERATE` | Changes occasionally (inventory, history). |
+| `VOLATILE` | Changes every export (session notes, live stats). Rendered last. |
+
+### `Tokenizer`
+
+| Member | Description |
+|--------|-------------|
+| `countTokens(text)` | Returns token count for the given text. |
+| `Tokenizer.DEFAULT` | Built-in ~4 chars/token heuristic via `TokenEstimator`. |
+
+### `SectionInterceptor`
+
+| Member | Description |
+|--------|-------------|
+| `intercept(sectionName, content)` | Transform a section's rendered output. Return content unchanged to skip. |
+
 ### Type Parameters
 
 | Parameter | Constraint | Description |
@@ -546,7 +734,7 @@ When you publish to JitPack later, just remove the `includeBuild` line and switc
 ./gradlew test
 ```
 
-95 tests covering: builder (19), chunker (8), token estimator (7), PromptResult (4), MarkdownTable (7), NumberFormat (11), PromptCompressor (9), AutoSkipEmpty (5), SectionStats (7), ContextWindow (12), BudgetResult (7).
+144 tests covering: builder (19), chunker (8), token estimator (7), PromptResult (4), MarkdownTable (7), NumberFormat (11), PromptCompressor (9), AutoSkipEmpty (5), SectionStats (7), ContextWindow (11), BudgetResult (7), DiffExport (9), ExportPreset (7), CacheOptimization (6), SectionGroup (7), StructuredMessage (8), Interceptor (7), Tokenizer (6).
 
 ## Generating docs
 

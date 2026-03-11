@@ -2,6 +2,17 @@
 
 All notable changes to ContextExport SDK are documented here.
 
+## [1.3.0] — 2026-03-11
+
+### Added
+- **Diff/delta exports** — `snapshot()` + `buildPromptDiff()` detect changed sections via SHA-256 hashing, only re-exporting what changed since the last snapshot
+- **Export presets** — `ExportPreset<TSection>` data class with `exportPresets()` override, `getPreset()`, and `buildFromPreset()` for named section configurations with optional target model
+- **Prompt cache optimization** — `cacheOptimized` property + `sectionVolatility()` override sorts sections by `Volatility` (STABLE → MODERATE → VOLATILE) to maximize AI API prompt caching
+- **Section groups** — `sectionGroups()` override with `sectionsFromGroups()` and `availableGroups()` for batch enable/disable of related sections
+- **Structured message output** — `buildStructuredPrompt()` returns `List<PromptMessage>` with `MessageRole.SYSTEM`/`USER` tags, mapping directly to AI API message arrays
+- **Render interceptors** — `SectionInterceptor` fun interface with `sectionInterceptors()` override for post-processing section output (compression, redaction, formatting)
+- **Pluggable tokenizers** — `Tokenizer` fun interface with `tokenizer` property override to swap in real tokenizers (tiktoken, etc.) instead of the default ~4 chars/token heuristic
+
 ## [1.2.0] — 2026-03-11
 
 ### Added
