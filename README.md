@@ -10,9 +10,8 @@ ContextExport gives you a generic `AppPromptBuilder<TData, TSection>` base class
 
 ```
 AppPromptBuilder<TData, TSection>        <- SDK (this library)
-  ├── CampaignPromptBuilder              <- RPG campaign app
-  ├── FitnessPromptBuilder               <- Workout tracker app
-  └── RetirementPromptBuilder            <- Finance planning app
+  ├── YourAppPromptBuilder               <- your app
+  └── AnotherAppPromptBuilder            <- another app
 ```
 
 ## Install via JitPack
@@ -37,11 +36,9 @@ In your `app/build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("com.github.YOUR_USERNAME:contextexport:1.0.0")
+    implementation("com.github.yetibownur:contextexport:1.0.1")
 }
 ```
-
-Replace `YOUR_USERNAME` with the GitHub account that hosts this repo, and `1.0.0` with the release tag you want.
 
 ### Step 3 — Subclass and build
 
