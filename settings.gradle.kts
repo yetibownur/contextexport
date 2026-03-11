@@ -6,3 +6,4 @@ pluginManagement {
 }
 
 rootProject.name = "contextexport"
+include("sample")

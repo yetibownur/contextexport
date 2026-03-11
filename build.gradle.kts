@@ -1,10 +1,11 @@
 plugins {
     kotlin("jvm") version "2.0.0"
     `maven-publish`
+    id("org.jetbrains.dokka") version "1.9.20"
 }
 
 group = "com.garrettmcbride.contextexport"
-version = "1.0.0"
+version = "1.1.0"
 
 repositories {
     mavenCentral()
@@ -18,6 +19,14 @@ java {
 
 kotlin {
     jvmToolchain(21)
+}
+
+dependencies {
+    testImplementation(kotlin("test"))
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 publishing {

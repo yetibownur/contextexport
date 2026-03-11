@@ -2,4 +2,5 @@ build/
 .gradle/
 *.iml
 .idea/
+.kotlin/
 local.properties
